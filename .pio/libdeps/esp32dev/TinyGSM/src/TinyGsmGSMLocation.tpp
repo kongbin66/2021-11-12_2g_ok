@@ -1,0 +1,210 @@
+/**
+ * @file       TinyGsmGSMLocation.h
+ * @author     Volodymyr Shymanskyy
+ * @license    LGPL-3.0
+ * @copyright  Copyright (c) 2016 Volodymyr Shymanskyy
+ * @date       Nov 2016
+ */
+
+#ifndef SRC_TINYGSMGSMLOCATION_H_
+#define SRC_TINYGSMGSMLOCATION_H_
+
+#include "TinyGsmCommon.h"
+
+#define TINY_GSM_MODEM_HAS_GSM_LOCATION
+
+template <class modemType>class TinyGsmGSMLocation {
+ public:
+  /*
+   * GSM Location functions
+   */
+  String getGsmLocationRaw() {
+    return thisModem().getGsmLocationRawImpl();
+  }
+
+  String getGsmLocation() {
+    return thisModem().getGsmLocationRawImpl();
+  }
+
+  bool getGsmLocation(float* lat, float* lon, float* accuracy = 0,
+                      int* year = 0, int* month = 0, int* day = 0,
+                      int* hour = 0, int* minute = 0, int* second = 0) {
+    return thisModem().getGsmLocationImpl(lat, lon, accuracy, year, month, day,
+                                          hour, minute, second);
+  };
+
+  String getGsmLocation1() {
+   // return thisModem().getGsmLocationImpl1();
+    return this->getGsmLocationImpl1();
+  };
+  bool getGsmLocation2(int* lat, int* lon) {
+    return thisModem().getGsmLocationImpl2(lat, lon);
+  };
+
+  bool getGsmLocationTime(int* year, int* month, int* day, int* hour,
+                          int* minute, int* second) {
+    float lat      = 0;
+    float lon      = 0;
+    float accuracy = 0;
+    return thisModem().getGsmLocation(&lat, &lon, &accuracy, year, month, day,
+                                      hour, minute, second);
+  }
+
+  /*
+   * CRTP Helper
+   */
+  
+ protected:
+  inline const modemType& thisModem() const {
+    return static_cast<const modemType&>(*this);
+  }
+  inline modemType& thisModem() {
+    return static_cast<modemType&>(*this);
+  }
+
+  /*
+   * GSM Location functions
+   * Template is based on SIMCOM commands
+   */
+ protected:
+  // String getGsmLocationImpl() {
+  //   thisModem().sendAT(GF("+CIPGSMLOC=1,1"));
+  //   if (thisModem().waitResponse(10000L, GF("+CIPGSMLOC:")) != 1) { return
+  //   ""; } String res = thisModem().stream.readStringUntil('\n');
+  //   thisModem().waitResponse();
+  //   res.trim();
+  //   return res;
+  // }
+    String getGsmLocationImpl1() 
+    {
+     thisModem().sendAT(GF("+CREG=2"));
+     thisModem().waitResponse();
+
+    
+     thisModem().sendAT(GF("+CREG?"));
+     if (thisModem().waitResponse(620000L, GF("+CREG: ")) != 1) { return ""; }
+     String res = thisModem().stream.readStringUntil('\n');
+     //String res = this.stream.readStringUntil('\n');
+    
+      thisModem().waitResponse(); 
+      thisModem().sendAT(GF("+CREG=0"));
+      thisModem().waitResponse();
+      thisModem().sendAT(GF("+CREG=0"));
+      thisModem().waitResponse();
+      res.trim();
+      return res;
+  }
+
+  String getGsmLocationRawImpl() {
+    // AT+CLBS=<type>,<cid>
+    // <type> 1 = location using 3 cell's information
+    //        3 = get number of times location has been accessed
+    //        4 = Get longitude latitude and date time
+    thisModem().sendAT(GF("+CLBS=1,1"));
+    // Should get a location code of "0" indicating success
+    if (thisModem().waitResponse(120000L, GF("+CLBS: ")) != 1) { return ""; }
+    int8_t locationCode = thisModem().streamGetIntLength(2);
+    // 0 = success, else, error
+    if (locationCode != 0) {
+      thisModem().waitResponse();  // should be an ok after the error
+      return "";
+    }
+    String res = thisModem().stream.readStringUntil('\n');
+    thisModem().waitResponse();
+    res.trim();
+    return res;
+  }
+
+
+  bool getGsmLocationImpl(float* lat, float* lon, float* accuracy = 0,
+                          int* year = 0, int* month = 0, int* day = 0,
+                          int* hour = 0, int* minute = 0, int* second = 0) 
+  {
+    // AT+CLBS=<type>,<cid>
+    // <type> 1 = location using 3 cell's information
+    //        3 = get number of times location has been accessed
+    //        4 = Get longitude latitude and date time
+    thisModem().sendAT(GF("+CLBS=4,1"));//+CLBS: 0,117.093220,36.112393,550,21/07/27,21:51:58
+    // Should get a location code of "0" indicating success
+    if (thisModem().waitResponse(120000L, GF("+CLBS: ")) != 1) { return false; }
+    int8_t locationCode = thisModem().streamGetIntLength(2);
+    // 0 = success, else, error
+    if (locationCode != 0) {
+      thisModem().waitResponse();  // should be an ok after the error
+      return false;
+    }
+ 
+  
+    // init variables
+    float ilat      = 0;
+    float ilon      = 0;
+    float iaccuracy = 0;
+    int   iyear     = 0;
+    int   imonth    = 0;
+    int   iday      = 0;
+    int   ihour     = 0;
+    int   imin      = 0;
+    int   isec      = 0;
+
+    ilat      = thisModem().streamGetFloatBefore(',');  // Latitude
+    ilon      = thisModem().streamGetFloatBefore(',');  // Longitude
+    iaccuracy = thisModem().streamGetIntBefore(',');    // Positioning accuracy
+
+    // Date & Time
+    iyear  = thisModem().streamGetIntBefore('/');
+    imonth = thisModem().streamGetIntBefore('/');
+    iday   = thisModem().streamGetIntBefore(',');
+    ihour  = thisModem().streamGetIntBefore(':');
+    imin   = thisModem().streamGetIntBefore(':');
+    isec   = thisModem().streamGetIntBefore('\n');
+
+    // Set pointers
+    if (lat != NULL) *lat = ilat;
+    if (lon != NULL) *lon = ilon;
+    if (accuracy != NULL) *accuracy = iaccuracy;
+    if (iyear < 2000) iyear += 2000;
+    if (year != NULL) *year = iyear;
+    if (month != NULL) *month = imonth;
+    if (day != NULL) *day = iday;
+    if (hour != NULL) *hour = ihour;
+    if (minute != NULL) *minute = imin;
+    if (second != NULL) *second = isec;
+
+    // Final OK
+    thisModem().waitResponse();
+    return true;
+  }
+
+  //获取CCID
+   bool getGsmLocationImpl2(int* lat, int* lon)
+   {
+     thisModem().sendAT(GF("+CREG=2"));
+     thisModem().waitResponse();
+
+     thisModem().sendAT(GF("+CREG?"));
+     if (thisModem().waitResponse(620000L, GF("+CREG: ")) != 1) { return false; }
+     int8_t locationCode = thisModem().streamGetIntLength(2);
+     if (locationCode != 2) {
+      thisModem().waitResponse();  // should be an ok after the error
+      return false;
+      }
+      int a=0;
+    int   lac1      = 0;
+    int  ciid1     = 0;
+ 
+
+    //  lac1 = thisModem(). streamGetIntBefore(','); // Latitude
+    Serial.printf("a:%d\n",thisModem().streamGetIntBefore(','));  // Longitude
+    Serial.printf("lac1:%ld\n",thisModem(). streamGetIntBefore(','));
+    Serial.printf("ciid1:%ld\n",thisModem(). streamGetIntBefore('\n'));
+  
+    thisModem().sendAT(GF("+CREG=0"));
+    thisModem().waitResponse();
+
+    return true;
+   }
+};
+
+#endif  // SRC_TINYGSMGSMLOCATION_H_
+
+
